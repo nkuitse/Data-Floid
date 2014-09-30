@@ -5,7 +5,7 @@ use warnings;
 
 use vars qw($VERSION);
 
-$VERSION = '0.03';
+$VERSION = '0.04';
 
 use Fcntl;
 use DB_File;
@@ -90,13 +90,13 @@ sub serialize {
 
 Data::Floid - simple, lightweight unique identifier generator
 
-=head SYNOPSIS
+=head1 SYNOPSIS
 
     $floid = Data::Floid->new($dir);
     $id = $floid->mint('0x%R16x');
     $id = $floid->mint('%Nd');
 
-=head DESCRIPTION
+=head1 DESCRIPTION
 
 B<Data::Floid> creates ("mints") unique identifiers using simple formulas.
 
@@ -132,7 +132,7 @@ Any string.
 
 =back
 
-=head METHODS
+=head1 METHODS
 
 =over 4
 
