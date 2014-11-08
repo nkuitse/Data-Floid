@@ -4,18 +4,108 @@ use strict;
 use warnings;
 
 use Data::Floid;
+use File::Basename qw(basename dirname);
 use Getopt::Long
     qw(:config posix_default gnu_compat require_order bundling no_ignore_case);
 
-my $dir = '.';
-GetOptions(
+sub fatal;
+sub usage;
+
+my ($dir, $file, $mode, $dbm) = qw(. floid rw AnyDBM_File);
+my @std_options = (
+    'c=s' => \$dbm,
     'd=s' => \$dir,
-) or usage();
+    'f=s' => \$file,
+    'm=s' => \$mode,
+);
 
-usage() if !@ARGV;
+usage if !@ARGV;
+my $sub = __PACKAGE__->can('cmd_' . shift @ARGV) || usage;
+$sub->();
 
-my $floid = Data::Floid->new($dir);
-foreach (@ARGV) {
-    my $id = $floid->mint($_);
+sub cmd_mint {
+    GetOptions(@std_options) or usage;
+    my $floid = floid('mode' => 'rw');
+    my $spec = shift @ARGV;
+    my $anno = @ARGV ? shift(@ARGV) : undef;
+    my $id = $floid->mint($spec, $anno);
     print $id, "\n";
 }
+
+sub cmd_get {
+    my ($null, $strict);
+    GetOptions(@std_options, 'n=s' => \$null, 's' => \$strict) or usage;
+    my $floid = floid('mode' => 'r');
+    my $id = shift @ARGV;
+    my $val;
+    eval {
+        $val = $floid->get($id);
+        if (defined $val) {
+            print $val, "\n";
+        }
+        elsif (defined $null) {
+            print $null;
+        }
+        elsif ($strict) {
+            fatal "no value associated with ID: $id";
+        }
+        exit 0;
+    };
+    fatal "get failed: $@";
+}
+
+sub cmd_set {
+    GetOptions(@std_options) or usage;
+    usage if @ARGV != 2;
+    my $floid = floid('mode' => 'rw');
+    my ($id, $val) = @ARGV;
+    eval {
+        $floid->set($id, $val);
+        exit 0;
+    };
+    fatal "set failed: $@";
+}
+
+sub cmd_dump {
+    my ($joiner, $onlykeys, $raw, $null) = ("\t", 0, 0, undef);
+    GetOptions(
+        @std_options,
+        'r' => \$raw,
+        'k' => \$onlykeys,
+        'j=s' => \$joiner,
+        'n=s' => \$null,
+    ) or usage;
+    my $floid = floid('mode' => 'r');
+    my $h = $floid->all($raw);
+    while (my ($k, $v) = each %$h) {
+        if ($onlykeys) {
+            print $k, "\n";
+        }
+        elsif (defined $v) {
+            print $k, $joiner, $v, "\n";
+        }
+        elsif (defined $null) {
+            print $k, $joiner, $null, "\n";
+        }
+    }
+}
+
+sub floid {
+    return Data::Floid->new(
+        'dbm' => $dbm,
+        'directory' => $dir,
+        'file' => $file, 
+        @_,
+    );
+}
+
+sub usage {
+    print STDERR "usage: floid CMD [OPTION]... [ARG]...\n";
+    exit 1;
+}
+
+sub fatal {
+    print STDERR 'floid: ', pop(), "\n";
+    exit @_ ? shift() : 2;
+}
+
