@@ -42,7 +42,7 @@ sub new {
     my $perm = $self{'permissions'} || 0644;
     my $dbm = $self{'dbm'} || 'AnyDBM_File';
     eval "use $dbm; 1" or die "Can't instantiate $dbm: $@";
-    $self->{'tieobj'} = tie my %index, $dbm, $ifile, $mode, $perm or die "Can't open index file $ifile: $!";
+    $self{'tieobj'} = tie my %index, $dbm, $ifile, $mode, $perm or die "Can't open index file $ifile: $!";
     bless {
         %self,
         'logfile' => $lfile,
@@ -133,9 +133,12 @@ sub set {
 }
 
 sub all {
-    my ($self) = @_;
+    my ($self, $raw) = @_;
     my $index = $self->{'index'};
-    if (wantarray) {
+    if ($raw) {
+        return wantarray ? %$index : { %$index }
+    }
+    elsif (wantarray) {
         return map  { unesc(substr($_, 1)) }
                grep { substr($_, 0, 1) eq KEY }
                keys %$index;
