@@ -3,14 +3,22 @@ package Data::Floid;
 use strict;
 use warnings;
 
-use vars qw($VERSION);
+use vars qw($VERSION $DBVERSION);
 
 $VERSION = '0.06';
+$DBVERSION = '1.0';
 
 use Fcntl;
+use Digest;
 
-use constant KEY => '#';
-use constant PRV => '-';
+# Key prefixes
+use constant CTL => '!';  # Control entry
+use constant KEY => '#';  # Minted ID
+use constant PRV => '-';  # Previous ID number
+use constant TPL => '@';  # Template
+use constant USR => ':';  # User entry
+
+# Value prefixes
 use constant UND => '~';
 use constant STR => '$';
 
@@ -29,9 +37,23 @@ my %mode2mode = (
 
 sub new {
     my $cls = shift;
-    unshift @_, 'directory' if @_ % 2;
+    unshift @_, 'path' if @_ % 2;
     my %self = @_;
-    my ($dir, $file) = @self{qw(directory file)};
+    my ($path, $dir, $file) = @self{qw(path directory file)};
+    if (defined $path) {
+        if (defined $dir) {
+            $file = $path;
+        }
+        elsif (defined $file) {
+            $dir = $path;
+        }
+        elsif (-f $path) {
+            ($dir, $file) = (dirname($path), basename($path));
+        }
+        elsif (-d _) {
+            $dir = $path;
+        }
+    }
     $file = 'floid' if !defined $file;
     $dir = '.' if !defined $dir;
     my $ifile = "$dir/$file";
@@ -42,7 +64,9 @@ sub new {
     my $perm = $self{'permissions'} || 0644;
     my $dbm = $self{'dbm'} || 'AnyDBM_File';
     eval "use $dbm; 1" or die "Can't instantiate $dbm: $@";
-    $self{'tieobj'} = tie my %index, $dbm, $ifile, $mode, $perm or die "Can't open index file $ifile: $!";
+    my @args = ($dbm, $ifile, $mode, $perm);
+    #push @args, $DB_File::DB_BTREE if $dbm eq 'DB_File';
+    $self{'tieobj'} = tie my %index, @args or die "Can't open index file $ifile: $!";
     bless {
         %self,
         'logfile' => $lfile,
@@ -57,7 +81,7 @@ sub DESTROY {
 }
 
 sub mint {
-    my ($self, $tmpl, $val) = @_;
+    my ($self, $tpl, $val) = @_;
     my $index = $self->{'index'};
     my $logfh = $self->{'logfh'};
     if (!defined $logfh) {
@@ -65,9 +89,8 @@ sub mint {
         $self->{'logfh'} = $logfh;
     }
     $val = val($val);
-    if ($tmpl =~ /^([^%]*)%R(\d*)x([^%]*)$/) {
+    if ($tpl =~ /^([^%]*)%R(\d*)x([^%]*)$/) {
         my ($pfx, $size, $sfx) = ($1, $2, $3);
-        use Digest;
         my $hash = eval { Digest->new('SHA-256') }
                 || eval { Digest->new('MD5'    ) }
                 || die;
@@ -81,30 +104,49 @@ sub mint {
             my $key = key($next);
             if (!defined $index->{$key}) {
                 $index->{$key} = $val;
-                print $logfh join(' ', MINT => time, ID => esc($next), TMPL => $tmpl, VAL => $val), "\n";
+                print $logfh join(' ', MNT => time, IDN => esc($next), TPL => $tpl, VAL => $val), "\n";
                 return $next;
             }
         }
         return $next;
     }
-    elsif ($tmpl =~ /^([^%]*)%N(\d*)([dx])([^%]*)$/) {
+    elsif ($tpl =~ /^([^%]*)%N(\d*)([dx])([^%]*)$/) {
         my ($pfx, $size, $type, $sfx) = ($1, $2, $3, $4);
         my $fmt = '%';
         $fmt .= '0'.$size if $size;
         $fmt .= $type;
         while (1) {
-            my $nextint = ++$index->{prv($tmpl)};
+            my $nextint = ++$index->{prv($tpl)};
             my $next = $pfx . sprintf($fmt, $nextint) . $sfx;
             my $key = key($next);
             next if defined $index->{$key};
             $index->{$key} = $val;
-            print $logfh join(' ', MINT => time, ID => esc($next), TMPL => $tmpl, NEXT => $nextint+1, VAL => $val), "\n";
+            print $logfh join(' ', MNT => time, IDN => esc($next), TPL => $tpl, NXT => $nextint+1, VAL => $val), "\n";
             return $next;
         }
     }
     else {
         die;
     }
+}
+
+sub init {
+    my ($self) = @_;
+    my $index = $self->{'index'};
+    die 'Already initialized' if keys %$index;
+    $index->{ctl('floidb')} = val($DBVERSION);
+}
+
+sub seed {
+    my ($self, $tpl, $seed) = @_;
+    my $index = $self->{'index'};
+    if ($tpl =~ /^([^%]|%%)*%N/) {
+        $seed = 0 if !defined $seed;
+        my $prv = prv($tpl);
+        die if defined $index->{$prv};
+        $index->{$prv} = $seed;
+    }
+    $index->{tpl($tpl)} = UND;
 }
 
 sub get {
@@ -153,10 +195,25 @@ sub all {
     }
 }
 
+sub uget {
+    my ($self, $key) = @_;
+    my $index = $self->{'index'};
+    return unval($index->{key($key)} // return);
+}
+
+sub uset {
+    my ($self, $key, $val) = @_;
+    my $index = $self->{'index'};
+    $index->{key($key)} = val($val);
+}
+
 # Private methods and functions
 
+sub ctl { CTL . shift }
 sub key { KEY . esc(shift) }
 sub prv { PRV . esc(shift) }
+sub tpl { TPL . esc(shift) }
+sub usr { USR . esc(shift) }
 sub val { defined($_[0]) ? STR . esc($_[0]) : UND }
 
 sub esc {
@@ -272,7 +329,7 @@ associated value, the undefined value is returned.
 
     $floid->set($id, $val);
 
-Set the value associated with a previously minder identifier.  If no such
+Set the value associated with a previously minted identifier.  If no such
 identifier has been minted, an exception is thrown.  I<$val> must be a scalar
 value, or undefined.
 
