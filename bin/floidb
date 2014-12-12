@@ -11,12 +11,9 @@ use Getopt::Long
 sub fatal;
 sub usage;
 
-my ($dir, $file, $mode, $dbm) = qw(. floid rw AnyDBM_File);
-my @std_options = (
+my $dbm = 'DB_File';
+my @stdopt = (
     'c=s' => \$dbm,
-    'd=s' => \$dir,
-    'f=s' => \$file,
-    'm=s' => \$mode,
 );
 
 usage if !@ARGV;
@@ -24,18 +21,26 @@ my $sub = __PACKAGE__->can('cmd_' . shift @ARGV) || usage;
 $sub->();
 
 sub cmd_mint {
-    GetOptions(@std_options) or usage;
-    my $floid = floid('mode' => 'rw');
+    my $bulk;
+    my $floid = init('rw', 1, 'b|bulk' => \$bulk);
     my $spec = shift @ARGV;
-    my $anno = @ARGV ? shift(@ARGV) : undef;
-    my $id = $floid->mint($spec, $anno);
-    print $id, "\n";
+    if ($bulk) {
+        while (<>) {
+            chomp;
+            my $id = $floid->mint(split / /, $_, 2);
+            print $id, ' ', $_, "\n";
+        }
+    }
+    else {
+        my $anno = @ARGV ? shift(@ARGV) : undef;
+        my $id = $floid->mint($spec, $anno);
+        print $id, "\n";
+    }
 }
 
 sub cmd_get {
     my ($null, $strict);
-    GetOptions(@std_options, 'n=s' => \$null, 's' => \$strict) or usage;
-    my $floid = floid('mode' => 'r');
+    my $floid = init('r', 1, 'n=s' => \$null, 's' => \$strict);
     my $id = shift @ARGV;
     my $val;
     eval {
@@ -55,31 +60,34 @@ sub cmd_get {
 }
 
 sub cmd_set {
-    GetOptions(@std_options) or usage;
-    usage if @ARGV != 2;
-    my $floid = floid('mode' => 'rw');
-    my ($id, $val) = @ARGV;
+    my $floid = init('rw', 2);
+    usage if @ARGV % 2;
     eval {
-        $floid->set($id, $val);
+        while (@ARGV) {
+            my ($id, $val) = splice @ARGV, 0, 2;
+            $floid->set($id, $val);
+        }
         exit 0;
     };
     fatal "set failed: $@";
 }
 
 sub cmd_dump {
-    my ($joiner, $onlykeys, $raw, $null) = ("\t", 0, 0, undef);
-    GetOptions(
-        @std_options,
+    my ($joiner, $onlykeys, $raw, $long, $null) = ("\t", 0, 0, undef);
+    my $floid = init('r', 0,
         'r' => \$raw,
+        'l' => sub { $long = $raw = 1 },
         'k' => \$onlykeys,
         'j=s' => \$joiner,
         'n=s' => \$null,
-    ) or usage;
-    my $floid = floid('mode' => 'r');
+    );
     my $h = $floid->all($raw);
     while (my ($k, $v) = each %$h) {
         if ($onlykeys) {
             print $k, "\n";
+        }
+        elsif ($long) {
+            print $k, ' ', length($v), "\n", $v, "\n";
         }
         elsif (defined $v) {
             print $k, $joiner, $v, "\n";
@@ -90,17 +98,30 @@ sub cmd_dump {
     }
 }
 
-sub floid {
+sub cmd_seed {
+    #@ usage: seed DB TMPL [SEED]
+    my $floid = init('rw', 1);
+    usage if @ARGV > 2;
+    $floid->seed(@_);
+}
+
+sub init {
+    my ($mode, $minargs, @opt) = @_;
+    GetOptions(@stdopt, @opt) or usage;
+    my $path;
+    if (defined $mode) {
+        usage if !@ARGV;
+        $path = shift @ARGV;
+    }
+    usage if @ARGV < $minargs;
     return Data::Floid->new(
         'dbm' => $dbm,
-        'directory' => $dir,
-        'file' => $file, 
-        @_,
-    );
+        'path' => $path,
+    ) if defined $path;
 }
 
 sub usage {
-    print STDERR "usage: floid CMD [OPTION]... [ARG]...\n";
+    print STDERR "usage: floidb CMD [OPTION]... [ARG]...\n";
     exit 1;
 }
 
