@@ -105,6 +105,11 @@ sub cmd_seed {
     $floid->seed(@_);
 }
 
+sub cmd_init {
+    #@ usage: init DB
+    my $floid = init('rw', 0);
+}
+
 sub init {
     my ($mode, $minargs, @opt) = @_;
     GetOptions(@stdopt, @opt) or usage;
@@ -117,6 +122,7 @@ sub init {
     return Data::Floid->new(
         'dbm' => $dbm,
         'path' => $path,
+        'mode' => $mode,
     ) if defined $path;
 }
 
