@@ -10,6 +10,7 @@ $DBVERSION = '1.0';
 
 use Fcntl;
 use Digest;
+use File::Basename qw(basename dirname);
 
 # Key prefixes
 use constant CTL => '!';  # Control entry
@@ -47,26 +48,26 @@ sub new {
         elsif (defined $file) {
             $dir = $path;
         }
-        elsif (-f $path) {
-            ($dir, $file) = (dirname($path), basename($path));
-        }
-        elsif (-d _) {
+        elsif (-d $path) {
             $dir = $path;
+        }
+        else {
+            ($dir, $file) = (dirname($path), basename($path));
         }
     }
     $file = 'floid' if !defined $file;
     $dir = '.' if !defined $dir;
     my $ifile = "$dir/$file";
-    my $lfile = $ifile . '.log';
+    (my $lfile = $ifile) =~ s/\.[^.]+$//;
+    $lfile .= '.log';
     $self{'mode'} ||= 'r';
     my $mode = $mode2mode{$self{'mode'}};
     die "Unrecognized mode: $self{'mode'}" if !defined $mode;
     my $perm = $self{'permissions'} || 0644;
     my $dbm = $self{'dbm'} || 'AnyDBM_File';
     eval "use $dbm; 1" or die "Can't instantiate $dbm: $@";
-    my @args = ($dbm, $ifile, $mode, $perm);
-    #push @args, $DB_File::DB_BTREE if $dbm eq 'DB_File';
-    $self{'tieobj'} = tie my %index, @args or die "Can't open index file $ifile: $!";
+    $self{'tieobj'} = tie my %index, $dbm, $ifile, $mode, $perm
+        or die "Can't open index file $ifile: $!";
     bless {
         %self,
         'logfile' => $lfile,
@@ -198,13 +199,13 @@ sub all {
 sub uget {
     my ($self, $key) = @_;
     my $index = $self->{'index'};
-    return unval($index->{key($key)} // return);
+    return unval($index->{usr($key)} // return);
 }
 
 sub uset {
     my ($self, $key, $val) = @_;
     my $index = $self->{'index'};
-    $index->{key($key)} = val($val);
+    $index->{usr($key)} = val($val);
 }
 
 # Private methods and functions
