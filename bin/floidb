@@ -22,9 +22,9 @@ $sub->();
 
 sub cmd_mint {
     my $bulk;
-    my $floid = init('rw', 1, 'b|bulk' => \$bulk);
-    my $spec = shift @ARGV;
+    my $floid = init('rw', 0, 'b|bulk' => \$bulk);
     if ($bulk) {
+        usage if @ARGV;
         while (<>) {
             chomp;
             my $id = $floid->mint(split / /, $_, 2);
@@ -32,6 +32,8 @@ sub cmd_mint {
         }
     }
     else {
+        usage if @ARGV < 1 || @ARGV > 2;
+        my $spec = shift @ARGV;
         my $anno = @ARGV ? shift(@ARGV) : undef;
         my $id = $floid->mint($spec, $anno);
         print $id, "\n";
