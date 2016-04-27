@@ -51,7 +51,8 @@ sub cmd_get {
             print $val, "\n";
         }
         elsif (defined $null) {
-            print $null;
+            chomp $null;
+            print $null, "\n";
         }
         elsif ($strict) {
             fatal "no value associated with ID: $id";
