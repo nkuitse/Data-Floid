@@ -43,6 +43,7 @@ sub cmd_mint {
 sub cmd_get {
     my ($null, $strict);
     my $floid = init('r', 1, 'n=s' => \$null, 's' => \$strict);
+    chomp $null if defined $null;
     my $id = shift @ARGV;
     my $val;
     eval {
@@ -51,7 +52,6 @@ sub cmd_get {
             print $val, "\n";
         }
         elsif (defined $null) {
-            chomp $null;
             print $null, "\n";
         }
         elsif ($strict) {
@@ -105,7 +105,7 @@ sub cmd_seed {
     #@ usage: seed DB TMPL [SEED]
     my $floid = init('rw', 1);
     usage if @ARGV > 2;
-    $floid->seed(@_);
+    $floid->seed(@ARGV);
 }
 
 sub cmd_init {
